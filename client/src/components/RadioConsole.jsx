@@ -428,9 +428,10 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
         }
 
         if (activeRadio.type === 'stream') {
+            // Let the audio element autoPlay handle it, or programmatic play if needed
             if (radioAudioRef.current) {
-                radioAudioRef.current.src = activeRadio.url;
-                radioAudioRef.current.play().catch(e => console.error("Radio Play Error", e));
+                radioAudioRef.current.volume = 1.0; // Reset volume
+                radioAudioRef.current.play().catch(e => console.error("Radio Play Error (Autoplay blocked?):", e));
             }
         } else if (activeRadio.type === 'static') {
             // Generate White Noise
