@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { Radio, Search, Play, Globe, WifiOff, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Radio, Search, Play, Globe, WifiOff, X, AlertTriangle, Activity } from 'lucide-react';
 import { RadioBrowserApi } from 'radio-browser-api';
 
 const ExternalTuner = ({ onTune, onClose }) => {
-    const [mode, setMode] = useState('search'); // 'search' | 'manual'
+    const [mode, setMode] = useState('search'); // 'search' | 'manual' | 'freq'
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [manualUrl, setManualUrl] = useState('');
+    const [freqInput, setFreqInput] = useState('101.5');
+    const [band, setBand] = useState('FM'); // FM, AM, SW
     const api = new RadioBrowserApi('Cerebro-WebFreq');
 
     const handleSearch = async (e) => {
@@ -30,10 +32,52 @@ const ExternalTuner = ({ onTune, onClose }) => {
         }
     };
 
+    // V2: Abstract Frequency Lookup
+    const handleFreqTune = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+
+        // Simulate "Scanning" delay
+        setTimeout(async () => {
+            try {
+                // Heuristic: Search for stations containing the frequency in their name
+                // This is a "best effort" to simulate tuning to 101.5
+                const stations = await api.searchStations({
+                    name: freqInput,
+                    limit: 5,
+                    order: 'clickcount',
+                    reverse: true
+                });
+
+                if (stations.length > 0) {
+                    // Pick the best one (highest bitrate/votes)
+                    const match = stations[0];
+                    onTune({
+                        type: 'stream',
+                        url: match.urlResolved,
+                        name: `${freqInput} ${band} - ${match.name.substr(0, 20)}`,
+                        metadata: { freq: freqInput, band, signal: 'STRONG' }
+                    });
+                } else {
+                    // Dead Air -> Static
+                    onTune({
+                        type: 'static',
+                        freq: freqInput,
+                        name: `${freqInput} ${band} - NO SIGNAL`,
+                        metadata: { freq: freqInput, band, signal: 'NONE' }
+                    });
+                }
+            } catch (err) {
+                // Fallback to static
+                onTune({ type: 'static', freq: freqInput, name: `${freqInput} ${band} - STATIC` });
+            } finally {
+                setLoading(false);
+            }
+        }, 1500); // Realistic scan delay
+    };
+
     const handleManualTune = (e) => {
         e.preventDefault();
-        // Simple validation or just assume it's a "dead" frequency if irrelevant
-        // For realism: If it looks like a URL, stream it. If it looks like a number, maybe play static?
         if (manualUrl.match(/^https?:\/\//)) {
             onTune({ type: 'stream', url: manualUrl, name: 'MANUAL STREAM' });
         } else {
@@ -45,35 +89,47 @@ const ExternalTuner = ({ onTune, onClose }) => {
     return (
         <div className="crm-panel box-shadow-glow" style={{
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '400px', maxHeight: '600px', zIndex: 1000, display: 'flex', flexDirection: 'column',
+            width: '450px', maxHeight: '650px', zIndex: 1000, display: 'flex', flexDirection: 'column',
             border: '2px solid var(--primary-color)', background: 'rgba(0,0,0,0.95)'
         }}>
             <div style={{ padding: '10px', background: 'var(--primary-color)', color: '#000', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Globe size={18} /> GLOBAL TUNER
+                    <Globe size={18} /> GLOBAL MONITORING
                 </h3>
                 <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#000' }}>
                     <X size={20} />
                 </button>
             </div>
 
+            <div style={{ padding: '10px', background: '#000', borderBottom: '1px solid #333', fontSize: '0.8rem', color: '#888', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <AlertTriangle size={32} style={{ color: 'var(--accent-color)' }} />
+                <div>
+                    <strong style={{ color: 'var(--accent-color)' }}>RECEIVE-ONLY MODE ACTIVE</strong><br />
+                    System is connected to public internet receivers. Transmission is strictly disabled on external bands.
+                    Audio provided by public database (Radio-Browser).
+                </div>
+            </div>
+
             <div style={{ display: 'flex', borderBottom: '1px solid #333' }}>
-                <button
-                    onClick={() => setMode('search')}
-                    style={{ flex: 1, padding: '10px', background: mode === 'search' ? '#222' : 'transparent', color: mode === 'search' ? 'var(--primary-color)' : '#666', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
-                >
-                    SEARCH DB
-                </button>
-                <button
-                    onClick={() => setMode('manual')}
-                    style={{ flex: 1, padding: '10px', background: mode === 'manual' ? '#222' : 'transparent', color: mode === 'manual' ? 'var(--primary-color)' : '#666', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
-                >
-                    MANUAL FREQ
-                </button>
+                {['search', 'freq', 'manual'].map(m => (
+                    <button
+                        key={m}
+                        onClick={() => setMode(m)}
+                        style={{
+                            flex: 1, padding: '10px',
+                            background: mode === m ? '#222' : 'transparent',
+                            color: mode === m ? 'var(--primary-color)' : '#666',
+                            borderBottom: mode === m ? '2px solid var(--primary-color)' : 'none',
+                            cursor: 'pointer', fontFamily: 'var(--font-mono)', textTransform: 'uppercase'
+                        }}
+                    >
+                        {m === 'freq' ? 'RF TUNER' : m}
+                    </button>
+                ))}
             </div>
 
             <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
-                {mode === 'search' ? (
+                {mode === 'search' && (
                     <>
                         <form onSubmit={handleSearch} style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
                             <input
@@ -88,7 +144,7 @@ const ExternalTuner = ({ onTune, onClose }) => {
                             </button>
                         </form>
 
-                        {loading && <div style={{ textAlign: 'center', color: '#888' }}>SCANNING ETHER...</div>}
+                        {loading && <div style={{ textAlign: 'center', color: '#888' }}><Activity className="crm-blink" /> SCANNING...</div>}
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {results.map(station => (
@@ -111,20 +167,61 @@ const ExternalTuner = ({ onTune, onClose }) => {
                             ))}
                         </div>
                     </>
-                ) : (
+                )}
+
+                {mode === 'freq' && (
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ marginBottom: '20px', padding: '20px', border: '1px solid #333', background: '#111' }}>
+                            <div style={{ fontSize: '2em', fontFamily: 'var(--font-display)', color: 'var(--primary-color)', textShadow: '0 0 10px var(--primary-color)' }}>
+                                {freqInput} <span style={{ fontSize: '0.5em' }}>{band}</span>
+                            </div>
+                            <div style={{ color: '#666', fontSize: '0.8em', marginTop: '5px' }}>RAW FREQUENCY INPUT</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', justifyContent: 'center' }}>
+                            {['FM', 'AM', 'SW'].map(b => (
+                                <button
+                                    key={b}
+                                    onClick={() => setBand(b)}
+                                    className={`crm-btn ${band === b ? '' : 'disabled'}`}
+                                    style={{ opacity: band === b ? 1 : 0.5 }}
+                                >
+                                    {b}
+                                </button>
+                            ))}
+                        </div>
+
+                        <form onSubmit={handleFreqTune} style={{ display: 'flex', gap: '5px' }}>
+                            <input
+                                type="number"
+                                value={freqInput}
+                                onChange={e => setFreqInput(e.target.value)}
+                                placeholder="000.00"
+                                step="0.1"
+                                style={{ flex: 1, padding: '15px', fontSize: '1.2em', background: '#000', border: '1px solid var(--primary-color)', color: '#fff', fontFamily: 'var(--font-mono)', textAlign: 'center' }}
+                            />
+                            <button type="submit" className="crm-btn" style={{ padding: '0 20px' }} disabled={loading}>
+                                {loading ? 'SCANNING...' : 'TUNE RF'}
+                            </button>
+                        </form>
+                        <p style={{ marginTop: '20px', fontSize: '0.8em', color: '#666' }}>
+                            System will auto-lock to nearest public stream matching this frequency tag.
+                        </p>
+                    </div>
+                )}
+
+                {mode === 'manual' && (
                     <div style={{ textAlign: 'center' }}>
                         <WifiOff size={48} style={{ color: '#444', marginBottom: '10px' }} />
                         <p style={{ color: '#888', marginBottom: '20px', fontSize: '0.9em' }}>
-                            Enter a direct stream URL or a random frequency numbers.
-                            <br />
-                            Invalid signals will produce <span style={{ color: '#fff' }}>white noise</span>.
+                            Direct Stream URL Injection
                         </p>
                         <form onSubmit={handleManualTune} style={{ display: 'flex', gap: '5px' }}>
                             <input
                                 type="text"
                                 value={manualUrl}
                                 onChange={e => setManualUrl(e.target.value)}
-                                placeholder="URL or Frequency (e.g., 99.5)"
+                                placeholder="http://stream-url..."
                                 style={{ flex: 1, padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', fontFamily: 'var(--font-mono)' }}
                             />
                             <button type="submit" className="crm-btn" style={{ padding: '8px' }}>
