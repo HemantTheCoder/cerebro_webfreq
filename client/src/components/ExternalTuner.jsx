@@ -41,7 +41,6 @@ const ExternalTuner = ({ onTune, onClose }) => {
         setTimeout(async () => {
             try {
                 // Heuristic: Search for stations containing the frequency in their name
-                // This is a "best effort" to simulate tuning to 101.5
                 const stations = await api.searchStations({
                     name: freqInput,
                     limit: 5,
@@ -50,7 +49,6 @@ const ExternalTuner = ({ onTune, onClose }) => {
                 });
 
                 if (stations.length > 0) {
-                    // Pick the best one (highest bitrate/votes)
                     const match = stations[0];
                     onTune({
                         type: 'stream',
@@ -59,7 +57,6 @@ const ExternalTuner = ({ onTune, onClose }) => {
                         metadata: { freq: freqInput, band, signal: 'STRONG' }
                     });
                 } else {
-                    // Dead Air -> Static
                     onTune({
                         type: 'static',
                         freq: freqInput,
@@ -68,12 +65,43 @@ const ExternalTuner = ({ onTune, onClose }) => {
                     });
                 }
             } catch (err) {
-                // Fallback to static
                 onTune({ type: 'static', freq: freqInput, name: `${freqInput} ${band} - STATIC` });
             } finally {
                 setLoading(false);
             }
-        }, 1500); // Realistic scan delay
+        }, 1500);
+    };
+
+    // V3: Scan Feature (Random Station)
+    const handleScan = async () => {
+        setLoading(true);
+        try {
+            // Get random busy station by using a random offset
+            const offset = Math.floor(Math.random() * 50);
+            const stations = await api.searchStations({
+                limit: 1,
+                offset: offset,
+                order: 'clickcount',
+                reverse: true
+            });
+
+            if (stations.length > 0) {
+                const match = stations[0];
+                onTune({
+                    type: 'stream',
+                    url: match.urlResolved,
+                    name: `SCAN: ${match.name.substr(0, 20)}`,
+                    metadata: { freq: 'SCAN', band: 'AUTO', signal: 'STRONG' }
+                });
+            } else {
+                onTune({ type: 'static', freq: '00.0', name: `SCAN FAILED - STATIC` });
+            }
+        } catch (err) {
+            console.error(err);
+            onTune({ type: 'static', freq: 'ERR', name: `SCAN ERROR` });
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleManualTune = (e) => {
@@ -81,7 +109,6 @@ const ExternalTuner = ({ onTune, onClose }) => {
         if (manualUrl.match(/^https?:\/\//)) {
             onTune({ type: 'stream', url: manualUrl, name: 'MANUAL STREAM' });
         } else {
-            // Assume it's a frequency number -> Play Static
             onTune({ type: 'static', freq: manualUrl, name: `${manualUrl} MHz - STATIC` });
         }
     };
@@ -97,7 +124,8 @@ const ExternalTuner = ({ onTune, onClose }) => {
                     <Globe size={18} /> GLOBAL MONITORING
                 </h3>
                 <div style={{ display: 'flex', gap: '5px' }}>
-                    <button onClick={() => onTune({ type: 'scan' })} className="crm-btn" style={{ padding: '2px 8px', fontSize: '0.7rem', border: '1px solid #000', color: '#000', background: 'var(--accent-color)' }} title="Find Random Frequency">
+                    {/* Directly call handleScan here */}
+                    <button onClick={handleScan} className="crm-btn" style={{ padding: '2px 8px', fontSize: '0.7rem', border: '1px solid #000', color: '#000', background: 'var(--accent-color)' }} title="Find Random Frequency">
                         SCAN
                     </button>
                     <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#000' }}>
@@ -111,7 +139,6 @@ const ExternalTuner = ({ onTune, onClose }) => {
                 <div>
                     <strong style={{ color: 'var(--accent-color)' }}>RECEIVE-ONLY MODE ACTIVE</strong><br />
                     System is connected to public internet receivers. Transmission is strictly disabled on external bands.
-                    Audio provided by public database (Radio-Browser).
                 </div>
             </div>
 
@@ -206,7 +233,7 @@ const ExternalTuner = ({ onTune, onClose }) => {
                                 style={{ flex: 1, padding: '15px', fontSize: '1.2em', background: '#000', border: '1px solid var(--primary-color)', color: '#fff', fontFamily: 'var(--font-mono)', textAlign: 'center' }}
                             />
                             <button type="submit" className="crm-btn" style={{ padding: '0 20px' }} disabled={loading}>
-                                {loading ? 'TUNING...' : 'TUNE RF'}
+                                {loading ? 'SCANNING...' : 'TUNE RF'}
                             </button>
                         </form>
                         <div style={{ marginTop: '15px' }}>
@@ -214,7 +241,7 @@ const ExternalTuner = ({ onTune, onClose }) => {
                                 {loading ? 'SCANNING...' : 'AUTO SCAN'}
                             </button>
                         </div>
-                        <p style={{ marginTop: '10px', fontSize: '0.8em', color: '#666' }}>
+                        <p style={{ marginTop: '20px', fontSize: '0.8em', color: '#666' }}>
                             System will auto-lock to nearest public stream matching this frequency tag.
                         </p>
                     </div>

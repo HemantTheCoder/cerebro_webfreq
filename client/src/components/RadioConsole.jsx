@@ -517,7 +517,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
 
                 {/* Shared Radio Player Bar */}
                 {activeRadio && (
-                    <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', background: '#002211', padding: '5px 15px', border: '1px solid var(--primary-color)', borderRadius: '5px', display: 'flex', gap: '10px', alignItems: 'center', zIndex: 100 }}>
+                    <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', background: '#002211', padding: '5px 15px', border: '1px solid var(--primary-color)', borderRadius: '5px', display: 'flex', gap: '10px', alignItems: 'center', zIndex: 2000 }}>
                         <RadioIcon size={16} className="crm-blink" style={{ color: 'var(--primary-color)' }} />
                         <span style={{ color: '#fff', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>{activeRadio.name.substr(0, 25)}</span>
 
