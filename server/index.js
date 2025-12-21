@@ -18,7 +18,9 @@ const io = new Server(server, {
     cors: {
         origin: "*", // Allow all origins for dev simplicity
         methods: ["GET", "POST"]
-    }
+    },
+    pingTimeout: 60000, // Wait 60s before ignoring client (default 20s)
+    pingInterval: 25000 // Ping every 25s
 });
 
 const PORT = process.env.PORT || 3001;
