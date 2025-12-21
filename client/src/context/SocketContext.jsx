@@ -18,7 +18,8 @@ export const SocketProvider = ({ children }) => {
             reconnection: true,
             reconnectionAttempts: 10,
             reconnectionDelay: 1000,
-            timeout: 20000
+            timeout: 20000,
+            transports: ['websocket'] // Force WebSocket to avoid polling issues
         });
 
         setSocket(newSocket);

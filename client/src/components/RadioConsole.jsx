@@ -74,6 +74,15 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
             });
         });
 
+        socket.on('disconnect', (reason) => {
+            logDebug(`Socket Disconnected: ${reason}`);
+            setMessages(prev => [...prev, { system: true, text: `Connection Lost: ${reason}` }]);
+        });
+
+        socket.on('connect_error', (err) => {
+            logDebug(`Connect Error: ${err.message}`);
+        });
+
         socket.on('signal', handleSignal);
 
         return () => {
