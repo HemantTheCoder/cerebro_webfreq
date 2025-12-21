@@ -125,7 +125,7 @@ io.on('connection', (socket) => {
 
 // Handle React routing, return all requests to React app
 if (process.env.NODE_ENV === 'production') {
-    app.get('*', (req, res) => {
+    app.get(/(.*)/, (req, res) => {
         res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
     });
 }
