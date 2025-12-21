@@ -110,6 +110,22 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- SHARED RADIO SYNC ---
+    socket.on('radio-tune', (radioData) => {
+        const freq = channelManager.users.get(socket.id);
+        if (freq) {
+            // Broadcast the new station to everyone else in the channel
+            socket.to(freq).emit('radio-tune', radioData);
+        }
+    });
+
+    socket.on('radio-stop', () => {
+        const freq = channelManager.users.get(socket.id);
+        if (freq) {
+            socket.to(freq).emit('radio-stop');
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         const freq = channelManager.leaveChannel(socket.id);
