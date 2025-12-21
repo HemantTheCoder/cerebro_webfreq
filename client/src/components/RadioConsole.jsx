@@ -644,15 +644,15 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', maxWidth: '150px', textAlign: 'center' }}>
                     HOLD [SPACE] TO TALK
                 </div>
-
-                <button
-                    className="crm-btn"
-                    onClick={() => setShowTuner(true)}
-                    style={{ position: 'absolute', right: '20px', bottom: '20px' }}
-                >
-                    <RadioIcon size={20} /> TUNER
-                </button>
             </div>
+
+            <button
+                className="crm-btn"
+                onClick={() => setShowTuner(true)}
+                style={{ position: 'fixed', right: '30px', bottom: '30px', zIndex: 1000 }}
+            >
+                <RadioIcon size={20} /> TUNER
+            </button>
         </div>
     );
 };
