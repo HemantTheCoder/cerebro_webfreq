@@ -670,6 +670,8 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
             >
                 <RadioIcon size={20} /> TUNER
             </button>
+
+            {showTuner && <ExternalTuner onTune={handleBroadcast} onClose={() => setShowTuner(false)} />}
         </div>
     );
 };
