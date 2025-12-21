@@ -13,6 +13,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     const [signalStrengths, setSignalStrengths] = useState({}); // socketId -> int (0-5)
     const [debugInfo, setDebugInfo] = useState([]); // On-screen debug logs
     const [isMediaReady, setIsMediaReady] = useState(false); // New: Block signaling until ready
+    const [micVolume, setMicVolume] = useState(0); // For local visualization
 
     // WebRTC Refs
     const localStreamRef = useRef(null);
@@ -153,6 +154,26 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
                     localVideoRef.current.srcObject = stream;
                     localVideoRef.current.muted = true; // Always mute local
                 }
+
+                // Setup Audio Analysis for Visualizer
+                if (audioContextRef.current) audioContextRef.current.close();
+                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContextRef.current.createMediaStreamSource(stream);
+                const analyser = audioContextRef.current.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const updateVolume = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    // Average volume
+                    let values = 0;
+                    for (let i = 0; i < dataArray.length; i++) values += dataArray[i];
+                    const average = values / dataArray.length;
+                    setMicVolume(average);
+                    requestAnimationFrame(updateVolume);
+                };
+                updateVolume();
 
                 // Update existing peers
                 Object.entries(peersRef.current).forEach(([socketId, peer]) => {
@@ -517,30 +538,59 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
                 </button>
 
                 {/* PTT Main Button */}
-                <button
-                    onMouseDown={startTx}
-                    onMouseUp={stopTx}
-                    onMouseLeave={stopTx} // Safety
-                    onTouchStart={startTx}
-                    onTouchEnd={stopTx}
-                    style={{
-                        width: '120px', height: '120px', borderRadius: '50%',
-                        background: isTransmitting ? 'var(--danger-color)' : '#222',
-                        border: `4px solid ${isTransmitting ? 'var(--accent-color)' : '#444'}`,
-                        color: isTransmitting ? '#000' : '#888',
-                        boxShadow: isTransmitting ? '0 0 30px var(--danger-color)' : 'inset 0 0 20px #000',
-                        cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        transition: 'all 0.1s'
-                    }}
-                >
-                    {isTransmitting ? <Mic size={40} /> : <MicOff size={40} />}
-                    <span style={{ fontWeight: 'bold', marginTop: '5px' }}>{isTransmitting ? 'ON AIR' : 'PTT'}</span>
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <button
+                        onMouseDown={startTx}
+                        onMouseUp={stopTx}
+                        onMouseLeave={stopTx} // Safety
+                        onTouchStart={startTx}
+                        onTouchEnd={stopTx}
+                        style={{
+                            width: '120px', height: '120px', borderRadius: '50%',
+                            background: isTransmitting ? 'var(--danger-color)' : '#222',
+                            border: `4px solid ${isTransmitting ? 'var(--accent-color)' : '#444'}`,
+                            color: isTransmitting ? '#000' : '#888',
+                            boxShadow: isTransmitting ? '0 0 30px var(--danger-color)' : 'inset 0 0 20px #000',
+                            cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.1s'
+                        }}
+                    >
+                        {isTransmitting ? <Mic size={40} /> : <MicOff size={40} />}
+                        <span style={{ fontWeight: 'bold', marginTop: '5px' }}>{isTransmitting ? 'ON AIR' : 'PTT'}</span>
+                    </button>
+                    {/* Visualizer under PTT */}
+                    <LocalAudioVisualizer volume={micVolume} isTransmitting={isTransmitting} />
+                </div>
 
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', maxWidth: '150px', textAlign: 'center' }}>
                     HOLD [SPACE] TO TALK
                 </div>
             </div>
+        </div>
+        </div >
+    );
+};
+
+// --- Helper Components ---
+
+const LocalAudioVisualizer = ({ volume, isTransmitting }) => {
+    // Volume is 0-255 roughly
+    const bars = 20;
+    const level = Math.min(Math.floor((volume / 100) * bars), bars);
+
+    return (
+        <div style={{ display: 'flex', gap: '2px', height: '10px', alignItems: 'flex-end', marginTop: '10px' }}>
+            {[...Array(bars)].map((_, i) => (
+                <div key={i} style={{
+                    width: '4px',
+                    height: i < level ? '100%' : '20%',
+                    background: i < level
+                        ? (i > 15 ? 'var(--danger-color)' : 'var(--primary-color)')
+                        : '#333',
+                    transition: 'height 0.05s'
+                }} />
+            ))}
+            <span style={{ fontSize: '0.7em', color: '#666', marginLeft: '5px' }}>MIC IN</span>
         </div>
     );
 };
