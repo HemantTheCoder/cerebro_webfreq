@@ -1,0 +1,13 @@
+{
+    "name": "cerebro-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "scripts": {
+        "setup": "npm install --prefix client && npm install --prefix server",
+        "build": "npm run setup && npm run build --prefix client",
+        "start": "npm start --prefix server"
+    }
+}
