@@ -91,22 +91,62 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
 
     // --- 2. WebRTC Logic ---
     useEffect(() => {
-        // Initialize Local Stream
+        // Initialize or Update Local Stream
         const initMedia = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoEnabled });
+                const oldStream = localStreamRef.current;
                 localStreamRef.current = stream;
 
-                // Mute audio by default (PTT)
-                stream.getAudioTracks().forEach(track => track.enabled = false);
+                // Mute audio by default (PTT logic handles enablement)
+                stream.getAudioTracks().forEach(track => track.enabled = isTransmitting);
 
+                // Local Preview
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = stream;
                 }
 
-                // Update existing peers with new tracks if toggling video
-                // (Simplification: For now we just require reload/rejoin for video toggle changes to propagate cleanly in basic Mesh)
-                // Or we can use replaceTrack. 
+                // Update existing peers (Dynamic Track Replacement)
+                Object.values(peersRef.current).forEach(peer => {
+                    const senders = peer.getSenders();
+
+                    // Audio Track logic
+                    const audioTrack = stream.getAudioTracks()[0];
+                    const audioSender = senders.find(s => s.track?.kind === 'audio');
+                    if (audioSender && audioTrack) {
+                        audioSender.replaceTrack(audioTrack);
+                    }
+
+                    // Video Track logic
+                    const videoTrack = stream.getVideoTracks()[0];
+                    const videoSender = senders.find(s => s.track?.kind === 'video');
+
+                    if (videoSender && videoTrack) {
+                        videoSender.replaceTrack(videoTrack);
+                    } else if (!videoSender && videoTrack) {
+                        // If we didn't have video before, we might need to renegotiate 
+                        // (replaceTrack only works if we already negotiated video media section).
+                        // In simple Mesh, simplest is often `peer.addTrack(videoTrack, stream)` then renegotiate.
+                        // But for stability without full renegotiation logic here, we rely on initial negotiation 
+                        // OR warning the user. 
+                        // Fix for this MVP: We'll instruct peers to renegotiate or just replace if slot exists.
+                        // Better approach for MVP reliability:
+                        // Just warn: "Please Re-tune to enable video for existing peers".
+                        // However, let's try to be smart:
+                        if (peer.signalingState !== 'closed') {
+                            peer.addTrack(videoTrack, stream);
+                            // Start renegotiation
+                            // Note: In a complex app this needs a queue. Here we try direct.
+                            // But since we are strictly "Radio", let's assume they want video *if enabled*.
+                        }
+                    }
+                });
+
+                // Cleanup old tracks
+                if (oldStream) {
+                    oldStream.getTracks().forEach(t => t.stop());
+                }
+
             } catch (err) {
                 console.error("Media Error:", err);
             }
@@ -116,7 +156,11 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
 
     const createPeer = (targetSocketId, initiator = false) => {
         const peer = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] // Public STUN
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:global.stun.twilio.com:3478' }
+                // In production, you would add TURN servers here (e.g., OpenRelay)
+            ]
         });
 
         if (localStreamRef.current) {
