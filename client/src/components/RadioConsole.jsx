@@ -477,6 +477,9 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     }, [transmittingUsers.size, isTransmitting]);
 
     const handleBroadcast = (radioData) => {
+        // Optimistic UI Update: Set active radio for self immediately
+        setActiveRadio(radioData);
+        // Then broadcast to others
         socket.emit('radio-tune', radioData);
         setShowTuner(false);
     };
