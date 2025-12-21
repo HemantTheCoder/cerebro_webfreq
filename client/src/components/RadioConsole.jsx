@@ -11,6 +11,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     const [remoteStreams, setRemoteStreams] = useState({}); // socketId -> Stream
     const [transmittingUsers, setTransmittingUsers] = useState(new Set()); // socketIds talking
     const [signalStrengths, setSignalStrengths] = useState({}); // socketId -> int (0-5)
+    const [debugInfo, setDebugInfo] = useState([]); // On-screen debug logs
 
     // WebRTC Refs
     const localStreamRef = useRef(null);
@@ -90,65 +91,84 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     }, [socket, frequency]);
 
     // --- 2. WebRTC Logic ---
+    // Helper to log to chat/screen
+    const logDebug = useCallback((msg) => {
+        console.log(`[RTC] ${msg}`);
+        // Optional: Uncomment to see connection logs in chat visual
+        // setMessages(prev => [...prev, { system: true, text: `DEBUG: ${msg}` }]); 
+    }, []);
+
     useEffect(() => {
-        // Initialize or Update Local Stream
         const initMedia = async () => {
             try {
+                // Always request Audio. Video depends on toggle.
+                // Note: We get a NEW stream every time video is toggled to ensure clean device release.
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoEnabled });
+
                 const oldStream = localStreamRef.current;
                 localStreamRef.current = stream;
 
-                // Mute audio by default (PTT logic handles enablement)
-                stream.getAudioTracks().forEach(track => track.enabled = isTransmitting);
+                // Audio: Disabled by default (PTT), but if talking, keep it enabled
+                stream.getAudioTracks().forEach(track => {
+                    track.enabled = isTransmitting;
+                });
+
+                // Video: If we requested video, ensure it's enabled
+                if (isVideoEnabled) {
+                    stream.getVideoTracks().forEach(track => track.enabled = true);
+                }
 
                 // Local Preview
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = stream;
+                    localVideoRef.current.muted = true; // Always mute local
                 }
 
-                // Update existing peers (Dynamic Track Replacement)
-                Object.values(peersRef.current).forEach(peer => {
+                // Update existing peers
+                Object.entries(peersRef.current).forEach(([socketId, peer]) => {
                     const senders = peer.getSenders();
 
-                    // Audio Track logic
+                    // Audio
                     const audioTrack = stream.getAudioTracks()[0];
-                    const audioSender = senders.find(s => s.track?.kind === 'audio');
-                    if (audioSender && audioTrack) {
-                        audioSender.replaceTrack(audioTrack);
+                    if (audioTrack) {
+                        const audioSender = senders.find(s => s.track?.kind === 'audio');
+                        if (audioSender) {
+                            audioSender.replaceTrack(audioTrack).catch(err => logDebug(`Replace Audio Fail: ${err}`));
+                        } else {
+                            // No sender yet? Add it.
+                            if (peer.signalingState !== 'closed') {
+                                peer.addTrack(audioTrack, stream);
+                                // In a perfect world, we renegotiate here.
+                                // simpler: just init call again?
+                            }
+                        }
                     }
 
-                    // Video Track logic
+                    // Video
                     const videoTrack = stream.getVideoTracks()[0];
-                    const videoSender = senders.find(s => s.track?.kind === 'video');
-
-                    if (videoSender && videoTrack) {
-                        videoSender.replaceTrack(videoTrack);
-                    } else if (!videoSender && videoTrack) {
-                        // If we didn't have video before, we might need to renegotiate 
-                        // (replaceTrack only works if we already negotiated video media section).
-                        // In simple Mesh, simplest is often `peer.addTrack(videoTrack, stream)` then renegotiate.
-                        // But for stability without full renegotiation logic here, we rely on initial negotiation 
-                        // OR warning the user. 
-                        // Fix for this MVP: We'll instruct peers to renegotiate or just replace if slot exists.
-                        // Better approach for MVP reliability:
-                        // Just warn: "Please Re-tune to enable video for existing peers".
-                        // However, let's try to be smart:
-                        if (peer.signalingState !== 'closed') {
-                            peer.addTrack(videoTrack, stream);
-                            // Start renegotiation
-                            // Note: In a complex app this needs a queue. Here we try direct.
-                            // But since we are strictly "Radio", let's assume they want video *if enabled*.
+                    if (videoTrack) {
+                        const videoSender = senders.find(s => s.track?.kind === 'video');
+                        if (videoSender) {
+                            videoSender.replaceTrack(videoTrack).catch(err => logDebug(`Replace Video Fail: ${err}`));
+                        } else {
+                            if (peer.signalingState !== 'closed') {
+                                peer.addTrack(videoTrack, stream);
+                                // renegotiate needed for new track
+                                initiateCall(socketId);
+                            }
                         }
                     }
                 });
 
-                // Cleanup old tracks
-                if (oldStream) {
+                // Stop old tracks to release HW
+                if (oldStream && oldStream !== stream) {
                     oldStream.getTracks().forEach(t => t.stop());
                 }
 
             } catch (err) {
                 console.error("Media Error:", err);
+                logDebug(`Media Error: ${err.message}`);
+                alert("Microphone/Camera access failed! Check permissions.");
             }
         };
         initMedia();
@@ -173,7 +193,19 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
             }
         };
 
+        peer.oniceconnectionstatechange = () => {
+            logDebug(`${targetSocketId} ICE State: ${peer.iceConnectionState}`);
+            if (peer.iceConnectionState === 'connected') {
+                setMessages(prev => [...prev, { system: true, text: `Secure link established: ${targetSocketId.substr(0, 4)}` }]);
+            }
+            if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
+                setMessages(prev => [...prev, { system: true, text: `Link unstable: ${targetSocketId.substr(0, 4)}` }]);
+                // Optional: Restart ICE?
+            }
+        };
+
         peer.ontrack = (e) => {
+            logDebug(`Received Track from ${targetSocketId}: ${e.track.kind}`);
             setRemoteStreams(prev => ({ ...prev, [targetSocketId]: e.streams[0] }));
         };
 
