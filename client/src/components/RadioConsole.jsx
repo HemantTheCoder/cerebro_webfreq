@@ -513,10 +513,31 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--success-color)' }}>
                         <Users size={16} /> <span>{activeUsers}</span>
                     </div>
-                    {activeRadio && <span style={{ color: 'var(--accent-color)', border: '1px solid var(--accent-color)', padding: '2px 5px', fontSize: '0.7em' }}>LIVE RF MONITOR</span>}
-                    {isTransmitting && <span style={{ color: 'var(--danger-color)', fontWeight: 'bold' }}>TX :: TRANSMITTING</span>}
-                    {transmittingUsers.size > 0 && <span style={{ color: 'var(--success-color)', fontWeight: 'bold' }}>RX :: RECEIVING</span>}
                 </div>
+
+                {/* Shared Radio Player Bar */}
+                {activeRadio && (
+                    <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', background: '#002211', padding: '5px 15px', border: '1px solid var(--primary-color)', borderRadius: '5px', display: 'flex', gap: '10px', alignItems: 'center', zIndex: 100 }}>
+                        <RadioIcon size={16} className="crm-blink" style={{ color: 'var(--primary-color)' }} />
+                        <span style={{ color: '#fff', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>{activeRadio.name.substr(0, 25)}</span>
+
+                        {activeRadio.type === 'stream' && (
+                            <audio
+                                ref={radioAudioRef}
+                                src={activeRadio.url}
+                                controls
+                                autoPlay
+                                style={{ height: '30px', width: '250px' }}
+                                onError={(e) => alert("Stream Error: " + e.currentTarget.error.message)}
+                            />
+                        )}
+
+                        <button onClick={() => handleStopRadio()} style={{ background: 'transparent', border: 'none', color: '#ff5555', cursor: 'pointer' }}>
+                            <XCircle size={18} />
+                        </button>
+                    </div>
+                )}
+
                 <button className="crm-btn danger" onClick={onDisconnect} style={{ padding: '5px 15px', fontSize: '0.8rem' }}>
                     <LogOut size={14} style={{ marginRight: '5px' }} /> DISCONNECT
                 </button>

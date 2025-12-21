@@ -96,9 +96,14 @@ const ExternalTuner = ({ onTune, onClose }) => {
                 <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Globe size={18} /> GLOBAL MONITORING
                 </h3>
-                <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#000' }}>
-                    <X size={20} />
-                </button>
+                <div style={{ display: 'flex', gap: '5px' }}>
+                    <button onClick={() => onTune({ type: 'scan' })} className="crm-btn" style={{ padding: '2px 8px', fontSize: '0.7rem', border: '1px solid #000', color: '#000', background: 'var(--accent-color)' }} title="Find Random Frequency">
+                        SCAN
+                    </button>
+                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#000' }}>
+                        <X size={20} />
+                    </button>
+                </div>
             </div>
 
             <div style={{ padding: '10px', background: '#000', borderBottom: '1px solid #333', fontSize: '0.8rem', color: '#888', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
@@ -201,10 +206,15 @@ const ExternalTuner = ({ onTune, onClose }) => {
                                 style={{ flex: 1, padding: '15px', fontSize: '1.2em', background: '#000', border: '1px solid var(--primary-color)', color: '#fff', fontFamily: 'var(--font-mono)', textAlign: 'center' }}
                             />
                             <button type="submit" className="crm-btn" style={{ padding: '0 20px' }} disabled={loading}>
-                                {loading ? 'SCANNING...' : 'TUNE RF'}
+                                {loading ? 'TUNING...' : 'TUNE RF'}
                             </button>
                         </form>
-                        <p style={{ marginTop: '20px', fontSize: '0.8em', color: '#666' }}>
+                        <div style={{ marginTop: '15px' }}>
+                            <button className="crm-btn" onClick={handleScan} disabled={loading} style={{ width: '100%', borderColor: 'var(--accent-color)', color: 'var(--accent-color)' }}>
+                                {loading ? 'SCANNING...' : 'AUTO SCAN'}
+                            </button>
+                        </div>
+                        <p style={{ marginTop: '10px', fontSize: '0.8em', color: '#666' }}>
                             System will auto-lock to nearest public stream matching this frequency tag.
                         </p>
                     </div>
