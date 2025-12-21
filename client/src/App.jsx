@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SocketProvider } from './context/SocketContext';
 import Tuner from './components/Tuner';
 import RadioConsole from './components/RadioConsole';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
 function App() {
@@ -19,19 +20,21 @@ function App() {
   };
 
   return (
-    <SocketProvider>
-      <div className="app-container">
-        <div className="crt-overlay"></div>
-        {currentFrequency ? (
-          <RadioConsole
-            frequency={currentFrequency}
-            onDisconnect={handleDisconnect}
-          />
-        ) : (
-          <Tuner onTune={handleTune} />
-        )}
-      </div>
-    </SocketProvider>
+    <ErrorBoundary>
+      <SocketProvider>
+        <div className="app-container">
+          <div className="crt-overlay"></div>
+          {currentFrequency ? (
+            <RadioConsole
+              frequency={currentFrequency}
+              onDisconnect={handleDisconnect}
+            />
+          ) : (
+            <Tuner onTune={handleTune} />
+          )}
+        </div>
+      </SocketProvider>
+    </ErrorBoundary>
   );
 }
 
