@@ -496,6 +496,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--success-color)' }}>
                         <Users size={16} /> <span>{activeUsers}</span>
                     </div>
+                    {activeRadio && <span style={{ color: 'var(--accent-color)', border: '1px solid var(--accent-color)', padding: '2px 5px', fontSize: '0.7em' }}>LIVE RF MONITOR</span>}
                     {isTransmitting && <span style={{ color: 'var(--danger-color)', fontWeight: 'bold' }}>TX :: TRANSMITTING</span>}
                     {transmittingUsers.size > 0 && <span style={{ color: 'var(--success-color)', fontWeight: 'bold' }}>RX :: RECEIVING</span>}
                 </div>
