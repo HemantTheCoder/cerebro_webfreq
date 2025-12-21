@@ -19,6 +19,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     const peersRef = useRef({}); // socketId -> RTCPeerConnection
     const pendingCandidates = useRef({}); // socketId -> RTCIceCandidate[] (Queue for early candidates)
     const localVideoRef = useRef(null);
+    const audioContextRef = useRef(null); // Just in case we need to unlock audio context
 
     // Chat Refs
     const [chatInput, setChatInput] = useState('');
