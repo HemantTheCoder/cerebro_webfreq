@@ -72,33 +72,28 @@ const ExternalTuner = ({ onTune, onClose }) => {
         }, 1500);
     };
 
-    // V3: Scan Feature (Random Station)
+    // V3: Scan Feature (List View)
     const handleScan = async () => {
         setLoading(true);
         try {
-            // Get random busy station by using a random offset
+            // Get random busy station list
             const offset = Math.floor(Math.random() * 50);
             const stations = await api.searchStations({
-                limit: 1,
+                limit: 10,
                 offset: offset,
                 order: 'clickcount',
                 reverse: true
             });
 
-            if (stations.length > 0) {
-                const match = stations[0];
-                onTune({
-                    type: 'stream',
-                    url: match.urlResolved,
-                    name: `SCAN: ${match.name.substr(0, 20)}`,
-                    metadata: { freq: 'SCAN', band: 'AUTO', signal: 'STRONG' }
-                });
-            } else {
-                onTune({ type: 'static', freq: '00.0', name: `SCAN FAILED - STATIC` });
-            }
+            // Show results in 'search' mode (or custom list mode)
+            setResults(stations);
+            setMode('search');
+
+            // Optional: Auto-fill query just to show something happened, or leave blank
+            setQuery('[AUTO SCANNED RESULTS]');
+
         } catch (err) {
             console.error(err);
-            onTune({ type: 'static', freq: 'ERR', name: `SCAN ERROR` });
         } finally {
             setLoading(false);
         }
