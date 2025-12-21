@@ -17,6 +17,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     // WebRTC Refs
     const localStreamRef = useRef(null);
     const peersRef = useRef({}); // socketId -> RTCPeerConnection
+    const pendingCandidates = useRef({}); // socketId -> RTCIceCandidate[] (Queue for early candidates)
     const localVideoRef = useRef(null);
 
     // Chat Refs
@@ -229,20 +230,55 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
     const handleSignal = async ({ sender, signal }) => {
         let peer = peersRef.current[sender];
 
+        // Create peer if it's an offer and we don't have one
         if (!peer && (signal.type === 'offer')) {
             peer = createPeer(sender, false);
         }
-        if (!peer) return; // Should not happen
+
+        // If still no peer (e.g. Early Candidate), we can't add it to a null peer.
+        // But we MUST buffer it if we expect an offer soon?
+        // Actually, 'createPeer' is only called on Offer or Initiate.
+        // If Candidate arrives first, we need to store it somewhere even without a peer?
+        // Simpler: If no peer, we can't buffer efficiently per peer instance.
+        // But wait, if Candidate arrives, we don't know the peer yet. 
+        // We buffer globally by sender ID.
 
         if (signal.type === 'offer') {
+            if (!peer) return; // Should have been created above
             await peer.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+
+            // Process Pending Candidates if any
+            const queue = pendingCandidates.current[sender] || [];
+            if (queue.length > 0) {
+                logDebug(`Flushing ${queue.length} buffered candidates for ${sender}`);
+                for (const candidate of queue) {
+                    await peer.addIceCandidate(candidate).catch(e => console.error(" ICE Add Error", e));
+                }
+                delete pendingCandidates.current[sender];
+            }
+
             const answer = await peer.createAnswer();
             await peer.setLocalDescription(answer);
             socket.emit('signal', { target: sender, signal: { type: 'answer', sdp: answer } });
+
         } else if (signal.type === 'answer') {
-            await peer.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            if (peer) {
+                await peer.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                // Usually answer comes after offer, candidates might be waiting too?
+                // Depending on role. 
+            }
         } else if (signal.type === 'candidate') {
-            await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            if (peer && peer.remoteDescription) {
+                // Safe to add
+                await peer.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(e => console.error("ICE Add Error", e));
+            } else {
+                // Buffer it!
+                logDebug(`Buffering ICE candidate from ${sender} (No RemoteDesc yet)`);
+                if (!pendingCandidates.current[sender]) {
+                    pendingCandidates.current[sender] = [];
+                }
+                pendingCandidates.current[sender].push(new RTCIceCandidate(signal.candidate));
+            }
         }
     };
 
