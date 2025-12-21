@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { Mic, MicOff, Video, VideoOff, MessageSquare, Signal, Users, LogOut, Send } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, MessageSquare, Signal, Users, LogOut, Send, Activity } from 'lucide-react';
 
 const RadioConsole = ({ frequency, onDisconnect }) => {
     const socket = useSocket();
