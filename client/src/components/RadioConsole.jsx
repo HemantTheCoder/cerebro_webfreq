@@ -567,7 +567,6 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
                 </div>
             </div>
         </div>
-        </div >
     );
 };
 
