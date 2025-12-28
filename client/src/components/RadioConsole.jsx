@@ -84,8 +84,17 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                             const cleanNumber = frequency.toString().replace(/[^0-9+]/g, '');
 
                             try {
-                                console.log("Dialing...");
-                                const call = await device.connect({ TargetNumber: cleanNumber });
+                                const connParams = {
+                                    TargetNumber: cleanNumber, // Custom param
+                                    To: cleanNumber,           // Standard param
+                                    // Redundant nested params for different SDK versions/TwiML Apps
+                                    params: {
+                                        TargetNumber: cleanNumber,
+                                        To: cleanNumber
+                                    }
+                                };
+                                console.log("Dialing with redundant params:", connParams);
+                                const call = await device.connect(connParams);
 
                                 call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
                                 call.on('disconnect', () => onDisconnect());
