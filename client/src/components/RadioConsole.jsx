@@ -65,10 +65,17 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         device.on('ready', () => {
                             console.log("Twilio Device Ready!");
                             // Connect
-                            const call = device.connect({ params: { To: frequency } });
+                            // Sanitize: Remove spaces, dashes, parens. Keep + and digits.
+                            const cleanNumber = frequency.toString().replace(/[^0-9+]/g, '');
+                            console.log("Dialing sanitized number:", cleanNumber);
+
+                            const call = device.connect({ params: { To: cleanNumber } });
                             call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
                             call.on('disconnect', () => onDisconnect());
-                            call.on('error', (err) => console.error("Call Error:", err));
+                            call.on('error', (err) => {
+                                console.error("Call Error:", err);
+                                setMessages(prev => [...prev, { system: true, text: `Call Error: ${err.message}` }]);
+                            });
                         });
 
                         device.on('error', (err) => {
