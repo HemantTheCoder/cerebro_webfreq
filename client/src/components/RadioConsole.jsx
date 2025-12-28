@@ -15,6 +15,7 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
     const [remoteStreams, setRemoteStreams] = useState({}); // socketId -> Stream
     const [transmittingUsers, setTransmittingUsers] = useState(new Set()); // socketIds talking
     const [signalStrengths, setSignalStrengths] = useState({}); // socketId -> int (0-5)
+    // eslint-disable-next-line
     const [debugInfo, setDebugInfo] = useState([]); // On-screen debug logs
     const [isMediaReady, setIsMediaReady] = useState(false); // New: Block signaling until ready
     const [micVolume, setMicVolume] = useState(0); // For local visualization
@@ -48,16 +49,25 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
             const initTwilio = async () => {
                 try {
                     // Fetch Token
+                    console.log("Fetching Twilio Token for identity:", socket.id);
                     const response = await fetch('/api/voice/token', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ identity: socket.id })
                     });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error("Twilio Token Fetch Failed:", response.status, errorText);
+                        throw new Error(`Server Error (${response.status}): ${errorText}`);
+                    }
+
                     const data = await response.json();
+                    console.log("Twilio Token Received:", data);
 
                     if (data.token) {
                         const device = new Device(data.token, {
-                            logoLevel: 'warn',
+                            logoLevel: 'debug', // Verbose logging
                             codecPreferences: ['opus', 'pcmu']
                         });
                         twilioDeviceRef.current = device;
@@ -79,15 +89,18 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         });
 
                         device.on('error', (err) => {
-                            console.error("Twilio Error:", err);
+                            console.error("Twilio Device Error:", err);
                             setMessages(prev => [...prev, { system: true, text: `VoIP Error: ${err.message}` }]);
                         });
 
                         await device.register();
+                    } else {
+                        console.error("No token in response:", data);
+                        throw new Error("Invalid Token Response from Server");
                     }
                 } catch (err) {
                     console.error("Twilio Init Failed:", err);
-                    setMessages(prev => [...prev, { system: true, text: "FAILED TO INITIALIZE VOIP LINK" }]);
+                    setMessages(prev => [...prev, { system: true, text: `VOIP FAILURE: ${err.message}` }]);
                 }
             };
             initTwilio();
@@ -798,50 +811,47 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
 };
 
 // --- Helper Components ---
-
-const LocalAudioVisualizer = ({ volume, isTransmitting }) => {
-    // Volume is 0-255 roughly
-    const bars = 20;
-    const level = Math.min(Math.floor((volume / 100) * bars), bars);
-
-    return (
-        <div style={{ display: 'flex', gap: '2px', height: '10px', alignItems: 'flex-end', marginTop: '10px' }}>
-            {[...Array(bars)].map((_, i) => (
-                <div key={i} style={{
-                    width: '4px',
-                    height: i < level ? '100%' : '20%',
-                    background: i < level
-                        ? (i > 15 ? 'var(--danger-color)' : 'var(--primary-color)')
-                        : '#333',
-                    transition: 'height 0.05s'
-                }} />
-            ))}
-            <span style={{ fontSize: '0.7em', color: '#666', marginLeft: '5px' }}>MIC IN</span>
-        </div>
-    );
-};
-
-// Helper Components for Media to handle refs cleanly
 const RemoteVideo = ({ stream }) => {
     const videoRef = useRef(null);
     useEffect(() => {
-        if (videoRef.current && stream && stream.active) {
-            videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current && stream) videoRef.current.srcObject = stream;
     }, [stream]);
-
-    // Safety check
-    if (!stream) return <div style={{ width: '100%', height: '100%', background: '#111' }}></div>;
-
-    return <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+    return <video ref={videoRef} autoPlay style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
 };
 
 const RemoteAudio = ({ stream }) => {
     const audioRef = useRef(null);
     useEffect(() => {
-        if (audioRef.current && stream) audioRef.current.srcObject = stream;
+        if (audioRef.current && stream) {
+            audioRef.current.srcObject = stream;
+            audioRef.current.play().catch(e => console.error("Auto-play blocked:", e));
+        }
     }, [stream]);
     return <audio ref={audioRef} autoPlay />;
+};
+
+const LocalAudioVisualizer = ({ volume, isTransmitting }) => {
+    // Determine bar height based on volume (0-255)
+    // Scale 0-255 to 0-30px
+    const height = Math.min(30, (volume / 255) * 50);
+
+    return (
+        <div style={{
+            width: '100%', height: '30px', marginTop: '10px',
+            background: '#111', borderRadius: '4px', overflow: 'hidden',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '2px'
+        }}>
+            {/* Simple visualizer simulation since we get a single average volume */}
+            {[...Array(10)].map((_, i) => (
+                <div key={i} style={{
+                    width: '6px',
+                    height: `${isTransmitting ? height * (Math.random() + 0.5) : 2}px`,
+                    background: isTransmitting ? 'var(--accent-color)' : '#333',
+                    transition: 'height 0.1s'
+                }} />
+            ))}
+        </div>
+    );
 };
 
 export default RadioConsole;
