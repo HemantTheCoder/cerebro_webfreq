@@ -19,8 +19,21 @@ app.post('/api/voice/token', (req, res) => {
         const data = voiceService.generateToken(identity);
         res.json(data);
     } catch (err) {
+        console.error("Token Error:", err.message);
         res.status(500).json({ error: err.message });
     }
+});
+
+// Debug Endpoint: Check Credentials via API
+app.get('/api/voice/config-check', (req, res) => {
+    const config = {
+        accountSid: process.env.TWILIO_ACCOUNT_SID ? `${process.env.TWILIO_ACCOUNT_SID.substr(0, 6)}...` : 'MISSING',
+        apiKey: process.env.TWILIO_API_KEY_SID ? `${process.env.TWILIO_API_KEY_SID.substr(0, 6)}...` : 'MISSING',
+        apiSecret: process.env.TWILIO_API_KEY_SECRET ? 'SET' : 'MISSING',
+        appSid: process.env.TWILIO_TWIML_APP_SID ? `${process.env.TWILIO_TWIML_APP_SID.substr(0, 6)}...` : 'MISSING',
+        callerId: process.env.TWILIO_CALLER_ID || 'NOT SET'
+    };
+    res.json(config);
 });
 
 app.post('/api/voice/incoming', (req, res) => {
