@@ -32,7 +32,9 @@ app.get('/api/voice/config-check', (req, res) => {
         apiKey: process.env.TWILIO_API_KEY_SID ? `${process.env.TWILIO_API_KEY_SID.substr(0, 6)}...` : 'MISSING',
         apiSecret: process.env.TWILIO_API_KEY_SECRET ? 'SET' : 'MISSING',
         appSid: process.env.TWILIO_TWIML_APP_SID ? `${process.env.TWILIO_TWIML_APP_SID.substr(0, 6)}...` : 'MISSING',
-        callerId: process.env.TWILIO_CALLER_ID || 'NOT SET'
+        callerId: process.env.TWILIO_CALLER_ID || 'NOT SET',
+        // DEBUG: List all available keys to diagnose injection success
+        availableEnvKeys: Object.keys(process.env).sort()
     };
     res.json(config);
 });
