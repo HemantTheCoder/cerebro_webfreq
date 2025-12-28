@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { Mic, MicOff, Video, VideoOff, MessageSquare, Signal, Users, LogOut, Send, Activity, Radio as RadioIcon, XCircle, Phone } from 'lucide-react';
+import { Device } from '@twilio/voice-sdk';
 import ExternalTuner from './ExternalTuner';
 import PhoneDialer from './PhoneDialer';
 import { frequencyToPhoneNumber } from '../utils/phoneUtils';
@@ -35,12 +36,62 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
     // Chat Refs
     const [chatInput, setChatInput] = useState('');
     const chatEndRef = useRef(null);
+    const twilioDeviceRef = useRef(null);
 
     // --- 1. Channel & Socket Setup ---
     useEffect(() => {
         if (!socket || !isMediaReady) return; // Wait for media before announcing presence
 
-        // Join
+        // Check if this uses Twilio (Real Phone)
+        if (frequency.toString().startsWith('+')) {
+            console.log("Initializing Twilio Call to:", frequency);
+            const initTwilio = async () => {
+                try {
+                    // Fetch Token
+                    const response = await fetch('/api/voice/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ identity: socket.id })
+                    });
+                    const data = await response.json();
+
+                    if (data.token) {
+                        const device = new Device(data.token, {
+                            logoLevel: 'warn',
+                            codecPreferences: ['opus', 'pcmu']
+                        });
+                        twilioDeviceRef.current = device;
+
+                        device.on('ready', () => {
+                            console.log("Twilio Device Ready!");
+                            // Connect
+                            const call = device.connect({ params: { To: frequency } });
+                            call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
+                            call.on('disconnect', () => onDisconnect());
+                            call.on('error', (err) => console.error("Call Error:", err));
+                        });
+
+                        device.on('error', (err) => {
+                            console.error("Twilio Error:", err);
+                            setMessages(prev => [...prev, { system: true, text: `VoIP Error: ${err.message}` }]);
+                        });
+
+                        await device.register();
+                    }
+                } catch (err) {
+                    console.error("Twilio Init Failed:", err);
+                    setMessages(prev => [...prev, { system: true, text: "FAILED TO INITIALIZE VOIP LINK" }]);
+                }
+            };
+            initTwilio();
+
+            // For UI consistency, we treat it as joined logic partially?
+            // But we don't emit 'join-frequency' to socket for the room?
+            // Actually we probably should stay in a room so we can still chat textually?
+            // Let's also join the socket room for presence.
+        }
+
+        // Join Socket Room (Always, for Presence/Chat even during Call)
         console.log("Media ready, joining frequency:", frequency);
         socket.emit('join-frequency', frequency);
 
@@ -135,6 +186,10 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
             socket.off('signal');
             socket.off('radio-tune');
             socket.off('radio-stop');
+
+            if (twilioDeviceRef.current) {
+                twilioDeviceRef.current.destroy();
+            }
 
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());

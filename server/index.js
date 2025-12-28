@@ -3,10 +3,36 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const channelManager = require('./channelManager');
+const voiceService = require('./services/voiceService');
+require('dotenv').config();
 
 const path = require('path');
 const app = express();
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // For Twilio Webhooks
+
+// Twilio Routes
+app.post('/api/voice/token', (req, res) => {
+    const identity = req.body.identity || 'user_' + Math.floor(Math.random() * 1000);
+    try {
+        const data = voiceService.generateToken(identity);
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/voice/incoming', (req, res) => {
+    try {
+        const xml = voiceService.handleVoiceWebhook(req, res);
+        res.type('text/xml');
+        res.send(xml);
+    } catch (err) {
+        console.error("Webhook Error:", err);
+        res.status(500).send("Error");
+    }
+});
 
 // Serve static files from React app in production
 if (process.env.NODE_ENV === 'production') {
