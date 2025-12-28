@@ -55,9 +55,16 @@ const voiceService = {
             console.log(`Dialing PSTN Number: ${destination}`);
 
             // Use verified Caller ID from Env
-            const dialOptions = {
-                callerId: process.env.TWILIO_CALLER_ID || process.env.TWILIO_PHONE_NUMBER
-            };
+            const callerId = process.env.TWILIO_CALLER_ID || process.env.TWILIO_PHONE_NUMBER;
+
+            if (!callerId) {
+                console.error("ERROR: No TWILIO_CALLER_ID or TWILIO_PHONE_NUMBER in environment variables.");
+                response.say("Call failed. Server missing Caller ID configuration.");
+                return response.toString();
+            }
+
+            console.log(`Using Caller ID: ${callerId}`);
+            const dialOptions = { callerId: callerId };
 
             const dial = response.dial(dialOptions);
             dial.number(destination);
