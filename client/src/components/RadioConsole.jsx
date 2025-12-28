@@ -66,22 +66,23 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                     console.log("Twilio Token Received:", data);
 
                     if (data.token) {
+                        if (twilioDeviceRef.current) {
+                            console.warn("Twilio Device already exists, destroying old instance...");
+                            twilioDeviceRef.current.destroy();
+                        }
+
                         const device = new Device(data.token, {
-                            logoLevel: 'debug', // Verbose logging
-                            codecPreferences: ['opus', 'pcmu']
+                            logoLevel: 'debug',
+                            codecPreferences: ['opus', 'pcmu'],
+                            // Add edge location if network issues persist (e.g. edge: 'ashburn')
                         });
                         twilioDeviceRef.current = device;
 
                         device.on('ready', () => {
-                            console.log("Twilio Device Ready!");
-                            // Connect
-                            // Sanitize: Remove spaces, dashes, parens. Keep + and digits.
+                            console.log("Twilio Device Ready! Dialing...");
                             const cleanNumber = frequency.toString().replace(/[^0-9+]/g, '');
-                            console.log("Dialing sanitized number:", cleanNumber);
-
-                            // Pass params directly (flat object), not nested in 'params'.
-                            // Use 'TargetNumber' to avoid collision with Twilio's internal 'To'.
                             const call = device.connect({ TargetNumber: cleanNumber });
+
                             call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
                             call.on('disconnect', () => onDisconnect());
                             call.on('error', (err) => {
@@ -92,8 +93,16 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
 
                         device.on('error', (err) => {
                             console.error("Twilio Device Error:", err);
-                            setMessages(prev => [...prev, { system: true, text: `VoIP Error: ${err.message}` }]);
+                            // 31005 = Connection Error, 31000 = Generic
+                            if (err.code === 31005) {
+                                setMessages(prev => [...prev, { system: true, text: "VOIP NETWORK ERROR: Firewall/Connection blocked." }]);
+                            } else {
+                                setMessages(prev => [...prev, { system: true, text: `VoIP Error (${err.code}): ${err.message}` }]);
+                            }
                         });
+
+                        device.on('registered', () => console.log("Twilio Registered Successfully"));
+                        device.on('unregistered', () => console.log("Twilio Unregistered"));
 
                         await device.register();
                     } else {
