@@ -28,6 +28,7 @@ function App() {
             <RadioConsole
               frequency={currentFrequency}
               onDisconnect={handleDisconnect}
+              onSwitchFrequency={handleTune}
             />
           ) : (
             <Tuner onTune={handleTune} />

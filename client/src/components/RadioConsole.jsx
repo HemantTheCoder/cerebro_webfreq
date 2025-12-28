@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useSocket } from '../context/SocketContext';
-import { Mic, MicOff, Video, VideoOff, MessageSquare, Signal, Users, LogOut, Send, Activity, Radio as RadioIcon, XCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, MessageSquare, Signal, Users, LogOut, Send, Activity, Radio as RadioIcon, XCircle, Phone } from 'lucide-react';
 import ExternalTuner from './ExternalTuner';
+import PhoneDialer from './PhoneDialer';
+import { frequencyToPhoneNumber } from '../utils/phoneUtils';
 
-const RadioConsole = ({ frequency, onDisconnect }) => {
+const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
     const socket = useSocket();
     const [activeUsers, setActiveUsers] = useState(0);
     const [messages, setMessages] = useState([]);
@@ -18,6 +18,7 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
 
     // Shared Radio State
     const [showTuner, setShowTuner] = useState(false);
+    const [showDialer, setShowDialer] = useState(false);
     const [activeRadio, setActiveRadio] = useState(null); // { type: 'stream'|'static', url: string, name: string }
     const radioAudioRef = useRef(null);
     const staticNodeRef = useRef(null); // AudioNode for white noise
@@ -510,9 +511,14 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
             {/* Header Panel */}
             <div className="crm-panel" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <h2 className="crm-text-glow" style={{ fontFamily: 'var(--font-display)', color: 'var(--primary-color)', margin: 0 }}>
-                        {frequency} <span style={{ fontSize: '0.6em', color: 'var(--text-muted)' }}>MHz</span>
-                    </h2>
+                    <div>
+                        <h2 className="crm-text-glow" style={{ fontFamily: 'var(--font-display)', color: 'var(--primary-color)', margin: 0, lineHeight: 1 }}>
+                            {frequency} <span style={{ fontSize: '0.6em', color: 'var(--text-muted)' }}>MHz</span>
+                        </h2>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--accent-color)', fontFamily: 'var(--font-mono)', opacity: 0.8 }}>
+                            {frequencyToPhoneNumber(frequency)}
+                        </div>
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--success-color)' }}>
                         <Users size={16} /> <span>{activeUsers}</span>
                     </div>
@@ -697,6 +703,30 @@ const RadioConsole = ({ frequency, onDisconnect }) => {
             </button>
 
             {showTuner && <ExternalTuner onTune={handleBroadcast} onClose={() => setShowTuner(false)} />}
+
+            <button
+                className="crm-btn"
+                onClick={() => setShowDialer(true)}
+                style={{ position: 'fixed', left: '30px', bottom: '30px', zIndex: 1000, display: 'flex', gap: '10px', alignItems: 'center' }}
+            >
+                <Phone size={20} /> DIAL
+            </button>
+
+            {showDialer && (
+                <PhoneDialer
+                    onClose={() => setShowDialer(false)}
+                    onCall={(newFreq) => {
+                        setShowDialer(false);
+                        // We need a way to switch frequency. 
+                        // Currently RadioConsole is mounted *with* a frequency prop.
+                        // We need to notify the parent (App.jsx) to change the frequency.
+                        // For now we will assume a prop 'onSwitchFrequency' or just reload the page (bad)
+                        // Actually, I added 'onSwitchFrequency' to the prop definition in the update above!
+                        if (onSwitchFrequency) onSwitchFrequency(newFreq);
+                        else alert("Switching frequency requires parent callback. (Dev Note: Implement onSwitchFrequency in App.jsx)");
+                    }}
+                />
+            )}
         </div>
     );
 };
