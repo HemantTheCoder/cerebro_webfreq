@@ -31,35 +31,31 @@ const voiceService = {
     },
 
     handleVoiceWebhook: (req, res) => {
-        // This runs when the Client calls via the TwiML App.
-        // The request contains 'To' (the number dialed).
-        const { To, From } = req.body;
+        // Twilio sends 'To' (or 'Called') and 'From' (or 'Caller')
+        // We check all potential variations to be robust.
+        console.log(`Voice Webhook Body (Full):`, JSON.stringify(req.body));
 
-        console.log(`Voice Webhook Body:`, JSON.stringify(req.body));
+        const destination = req.body.To || req.body.Called || req.body.to || req.body.called;
 
         const response = new VoiceResponse();
 
-        if (!To) {
+        if (!destination) {
             const receivedKeys = Object.keys(req.body).join(', ');
-            console.error("Missing 'To' parameter. Received:", receivedKeys);
-            response.say(`Invalid destination. Received parameters: ${receivedKeys || 'none'}`);
-        } else if (To.includes('+')) {
-            // Dial the real number (PSTN)
-            // We must ensure the 'callerId' is our Twilio Number or verified User Number.
-            // Since we don't have a verified number config for the user yet, 
-            // we might fail if we don't set callerId. 
-            // Twilio requires callerId for <Dial>. 
-            // IMPORTANT: User must have purchased a number OR verified their personal number.
-            // We will try to dial without callerId (uses default app setting if configured) or fallback.
+            console.error("Missing Destination. Keys received:", receivedKeys);
+            response.say(`Connection failed. No destination found. Received keys: ${receivedKeys}`);
+        } else if (destination.includes('+')) {
+            console.log(`Dialing PSTN Number: ${destination}`);
 
-            const dial = response.dial({
+            // Use verified Caller ID from Env
+            const dialOptions = {
                 callerId: process.env.TWILIO_CALLER_ID || process.env.TWILIO_PHONE_NUMBER
-            });
-            dial.number(To);
+            };
+
+            const dial = response.dial(dialOptions);
+            dial.number(destination);
         } else {
-            // Internal Client-to-Client (if we supported it via Twilio)
-            // For now, treat as invalid or echo
-            response.say('Dialing internal client not supported in this mode.');
+            console.log("Internal/Invalid Destination:", destination);
+            response.say('Dialing internal client not supported via PSTN.');
         }
 
         return response.toString();
