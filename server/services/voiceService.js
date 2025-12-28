@@ -46,9 +46,11 @@ const voiceService = {
         const response = new VoiceResponse();
 
         if (!destination) {
-            const receivedKeys = Object.keys(req.body).join(', ');
-            console.error("Missing Destination. Keys received:", receivedKeys);
-            response.say(`Connection failed. No destination found. Received keys: ${receivedKeys}`);
+            const keys = Object.keys(req.body);
+            const debugMsg = keys.map(k => `${k}:${req.body[k]}`).join(', ');
+            console.error("Missing Destination. Data:", debugMsg);
+            // Twilio Speak limit is loose, but let's keep it concise for the user hearing it
+            response.say(`Connection failed. No destination. Values: ${debugMsg.substring(0, 100)}`);
         } else if (destination.includes('+')) {
             console.log(`Dialing PSTN Number: ${destination}`);
 
