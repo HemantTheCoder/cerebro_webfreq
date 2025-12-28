@@ -74,26 +74,36 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         const device = new Device(data.token, {
                             logoLevel: 'debug',
                             codecPreferences: ['opus', 'pcmu'],
-                            // Add edge location if network issues persist (e.g. edge: 'ashburn')
                         });
                         twilioDeviceRef.current = device;
 
-                        device.on('ready', () => {
-                            console.log("Twilio Device Ready! Dialing...");
+                        // MAIN DIALING LOGIC
+                        const attemptDial = () => {
+                            console.log("Attempting to Dial... Device State:", device.state);
+                            if (device.isBusy) { console.warn("Device busy, skipping."); return; }
                             const cleanNumber = frequency.toString().replace(/[^0-9+]/g, '');
-                            const call = device.connect({ TargetNumber: cleanNumber });
 
-                            call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
-                            call.on('disconnect', () => onDisconnect());
-                            call.on('error', (err) => {
-                                console.error("Call Error:", err);
-                                setMessages(prev => [...prev, { system: true, text: `Call Error: ${err.message}` }]);
-                            });
+                            try {
+                                const call = device.connect({ TargetNumber: cleanNumber });
+                                call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
+                                call.on('disconnect', () => onDisconnect());
+                                call.on('error', (err) => {
+                                    console.error("Call Error:", err);
+                                    setMessages(prev => [...prev, { system: true, text: `Call Error: ${err.message}` }]);
+                                });
+                            } catch (e) {
+                                console.error("Dial Exception:", e);
+                                setMessages(prev => [...prev, { system: true, text: `Dial Exception: ${e.message}` }]);
+                            }
+                        };
+
+                        device.on('ready', () => {
+                            console.log("Twilio Device Ready Event Fired!");
+                            attemptDial();
                         });
 
                         device.on('error', (err) => {
                             console.error("Twilio Device Error:", err);
-                            // 31005 = Connection Error, 31000 = Generic
                             if (err.code === 31005) {
                                 setMessages(prev => [...prev, { system: true, text: "VOIP NETWORK ERROR: Firewall/Connection blocked." }]);
                             } else {
@@ -101,7 +111,16 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                             }
                         });
 
-                        device.on('registered', () => console.log("Twilio Registered Successfully"));
+                        device.on('registered', () => {
+                            console.log("Twilio Registered Successfully");
+                            // Fallback: If 'ready' doesn't fire, force dial after 1s
+                            setTimeout(() => {
+                                if (device.state === 'registered' || device.state === 'ready') {
+                                    console.log("Force Dialing via Fallback...");
+                                    attemptDial();
+                                }
+                            }, 1000);
+                        });
                         device.on('unregistered', () => console.log("Twilio Unregistered"));
 
                         await device.register();
@@ -115,11 +134,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 }
             };
             initTwilio();
-
-            // For UI consistency, we treat it as joined logic partially?
-            // But we don't emit 'join-frequency' to socket for the room?
-            // Actually we probably should stay in a room so we can still chat textually?
-            // Let's also join the socket room for presence.
         }
 
         // Join Socket Room (Always, for Presence/Chat even during Call)
@@ -138,7 +152,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
 
         socket.on('user-left', ({ socketId }) => {
             setMessages(prev => [...prev, { system: true, text: `Signal lost: ${socketId.substr(0, 4)}...` }]);
-            // Cleanup peer
             if (peersRef.current[socketId]) {
                 peersRef.current[socketId].close();
                 delete peersRef.current[socketId];
@@ -169,25 +182,24 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         });
 
         socket.on('radio-tune', (radioData) => {
-            logDebug(`Radio Tuned: ${radioData.name}`);
+            console.log(`[RTC] Radio Tuned: ${radioData.name}`);
             setActiveRadio(radioData);
         });
 
         socket.on('radio-stop', () => {
-            logDebug("Radio Stopped");
+            console.log("[RTC] Radio Stopped");
             setActiveRadio(null);
         });
 
         socket.on('disconnect', (reason) => {
-            logDebug(`Socket Disconnected: ${reason}`);
+            console.log(`[RTC] Socket Disconnected: ${reason}`);
             setMessages(prev => [...prev, { system: true, text: `Connection Lost: ${reason}` }]);
         });
 
         socket.on('connect_error', (err) => {
-            logDebug(`Connect Error: ${err.message}`);
+            console.log(`[RTC] Connect Error: ${err.message}`);
         });
 
-        // Global Async Error Handler (Last resort to see why it crashes)
         const handleGlobalError = (msg, url, line, col, error) => {
             console.error("Global Error:", msg, error);
             setMessages(prev => [...prev, { system: true, text: `FATAL ERROR: ${msg}` }]);
@@ -201,14 +213,12 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 await handleSignal(data);
             } catch (err) {
                 console.error("Signal Handling Error:", err);
-                logDebug(`Signal Error: ${err.message}`);
             }
         });
 
         return () => {
             socket.emit('leave-frequency');
             window.removeEventListener('error', handleGlobalError);
-            // ... remove other listeners
             socket.off('message');
             socket.off('user-joined');
             socket.off('user-left');
@@ -225,46 +235,36 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
-            if (activeRadio) handleStopRadio(true); // Stop silence on exit
+            if (activeRadio) handleStopRadio(true);
             Object.values(peersRef.current).forEach(p => p.close());
         };
-    }, [socket, frequency, isMediaReady]); // Depend on isMediaReady
+    }, [socket, frequency, isMediaReady]);
 
-    // --- 2. WebRTC Logic ---
-    // Helper to log to chat/screen
+    // --- 2. WebRTC Logic (Unchanged) ---
     const logDebug = useCallback((msg) => {
         console.log(`[RTC] ${msg}`);
-        // Optional: Uncomment to see connection logs in chat visual
-        // setMessages(prev => [...prev, { system: true, text: `DEBUG: ${msg}` }]); 
     }, []);
 
     useEffect(() => {
         const initMedia = async () => {
             try {
-                // Always request Audio. Video depends on toggle.
-                // Note: We get a NEW stream every time video is toggled to ensure clean device release.
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoEnabled });
-
                 const oldStream = localStreamRef.current;
                 localStreamRef.current = stream;
 
-                // Audio: Disabled by default (PTT), but if talking, keep it enabled
                 stream.getAudioTracks().forEach(track => {
                     track.enabled = isTransmitting;
                 });
 
-                // Video: If we requested video, ensure it's enabled
                 if (isVideoEnabled) {
                     stream.getVideoTracks().forEach(track => track.enabled = true);
                 }
 
-                // Local Preview
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = stream;
-                    localVideoRef.current.muted = true; // Always mute local
+                    localVideoRef.current.muted = true;
                 }
 
-                // Setup Audio Analysis for Visualizer
                 if (audioContextRef.current) audioContextRef.current.close();
                 audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioContextRef.current.createMediaStreamSource(stream);
@@ -275,7 +275,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 const dataArray = new Uint8Array(analyser.frequencyBinCount);
                 const updateVolume = () => {
                     analyser.getByteFrequencyData(dataArray);
-                    // Average volume
                     let values = 0;
                     for (let i = 0; i < dataArray.length; i++) values += dataArray[i];
                     const average = values / dataArray.length;
@@ -284,55 +283,33 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 };
                 updateVolume();
 
-                // Update existing peers
                 Object.entries(peersRef.current).forEach(([socketId, peer]) => {
                     const senders = peer.getSenders();
-
-                    // Audio
                     const audioTrack = stream.getAudioTracks()[0];
                     if (audioTrack) {
                         const audioSender = senders.find(s => s.track?.kind === 'audio');
-                        if (audioSender) {
-                            audioSender.replaceTrack(audioTrack).catch(err => logDebug(`Replace Audio Fail: ${err}`));
-                        } else {
-                            // No sender yet? Add it.
-                            if (peer.signalingState !== 'closed') {
-                                peer.addTrack(audioTrack, stream);
-                                // In a perfect world, we renegotiate here.
-                                // simpler: just init call again?
-                            }
-                        }
+                        if (audioSender) audioSender.replaceTrack(audioTrack).catch(console.error);
+                        else if (peer.signalingState !== 'closed') peer.addTrack(audioTrack, stream);
                     }
-
-                    // Video
                     const videoTrack = stream.getVideoTracks()[0];
                     if (videoTrack) {
                         const videoSender = senders.find(s => s.track?.kind === 'video');
-                        if (videoSender) {
-                            videoSender.replaceTrack(videoTrack).catch(err => logDebug(`Replace Video Fail: ${err}`));
-                        } else {
-                            if (peer.signalingState !== 'closed') {
-                                peer.addTrack(videoTrack, stream);
-                                // renegotiate needed for new track
-                                initiateCall(socketId);
-                            }
+                        if (videoSender) videoSender.replaceTrack(videoTrack).catch(console.error);
+                        else if (peer.signalingState !== 'closed') {
+                            peer.addTrack(videoTrack, stream);
+                            initiateCall(socketId);
                         }
                     }
                 });
 
-                // Stop old tracks to release HW
                 if (oldStream && oldStream !== stream) {
                     oldStream.getTracks().forEach(t => t.stop());
                 }
 
-                setIsMediaReady(true); // Signal that we are ready to join/negotiate
-
+                setIsMediaReady(true);
             } catch (err) {
                 console.error("Media Error:", err);
-                logDebug(`Media Error: ${err.message}`);
                 alert("Microphone/Camera access failed! Check permissions.");
-                // Even if failed, we might want to join as listener? 
-                // For now, let's allow join but it might be audio-only or broken.
                 setIsMediaReady(true);
             }
         };
@@ -344,7 +321,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:global.stun.twilio.com:3478' }
-                // In production, you would add TURN servers here (e.g., OpenRelay)
             ]
         });
 
@@ -359,18 +335,12 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         };
 
         peer.oniceconnectionstatechange = () => {
-            logDebug(`${targetSocketId} ICE State: ${peer.iceConnectionState}`);
             if (peer.iceConnectionState === 'connected') {
                 setMessages(prev => [...prev, { system: true, text: `Secure link established: ${targetSocketId.substr(0, 4)}` }]);
-            }
-            if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
-                setMessages(prev => [...prev, { system: true, text: `Link unstable: ${targetSocketId.substr(0, 4)}` }]);
-                // Optional: Restart ICE?
             }
         };
 
         peer.ontrack = (e) => {
-            logDebug(`Received Track from ${targetSocketId}: ${e.track.kind}`);
             setRemoteStreams(prev => ({ ...prev, [targetSocketId]: e.streams[0] }));
         };
 
@@ -386,71 +356,43 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
             socket.emit('signal', { target: targetSocketId, signal: { type: 'offer', sdp: offer } });
         } catch (err) {
             console.error("Initiate Call Error:", err);
-            logDebug(`Init Call Failed: ${err.message}`);
         }
     };
 
     const handleSignal = async ({ sender, signal }) => {
         try {
             let peer = peersRef.current[sender];
-
-            // Create peer if it's an offer and we don't have one
             if (!peer && (signal.type === 'offer')) {
                 peer = createPeer(sender, false);
             }
 
-            // If still no peer (e.g. Early Candidate), we can't add it to a null peer.
-            // But we MUST buffer it if we expect an offer soon?
-            // Actually, 'createPeer' is only called on Offer or Initiate.
-            // If Candidate arrives first, we need to store it somewhere even without a peer?
-            // Simpler: If no peer, we can't buffer efficiently per peer instance.
-            // But wait, if Candidate arrives, we don't know the peer yet. 
-            // We buffer globally by sender ID.
-
             if (signal.type === 'offer') {
-                if (!peer) return; // Should have been created above
+                if (!peer) return;
                 await peer.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-
-                // Process Pending Candidates if any
                 const queue = pendingCandidates.current[sender] || [];
                 if (queue.length > 0) {
-                    logDebug(`Flushing ${queue.length} buffered candidates for ${sender}`);
-                    for (const candidate of queue) {
-                        await peer.addIceCandidate(candidate).catch(e => console.error(" ICE Add Error", e));
-                    }
+                    for (const candidate of queue) await peer.addIceCandidate(candidate).catch(console.error);
                     delete pendingCandidates.current[sender];
                 }
-
                 const answer = await peer.createAnswer();
                 await peer.setLocalDescription(answer);
                 socket.emit('signal', { target: sender, signal: { type: 'answer', sdp: answer } });
 
             } else if (signal.type === 'answer') {
-                if (peer) {
-                    await peer.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-                    // Usually answer comes after offer, candidates might be waiting too?
-                    // Depending on role. 
-                }
+                if (peer) await peer.setRemoteDescription(new RTCSessionDescription(signal.sdp));
             } else if (signal.type === 'candidate') {
                 if (peer && peer.remoteDescription) {
-                    // Safe to add
-                    await peer.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(e => console.error("ICE Add Error", e));
+                    await peer.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(console.error);
                 } else {
-                    // Buffer it!
-                    logDebug(`Buffering ICE candidate from ${sender} (No RemoteDesc yet)`);
-                    if (!pendingCandidates.current[sender]) {
-                        pendingCandidates.current[sender] = [];
-                    }
+                    if (!pendingCandidates.current[sender]) pendingCandidates.current[sender] = [];
                     pendingCandidates.current[sender].push(new RTCIceCandidate(signal.candidate));
                 }
             }
         } catch (err) {
             console.error("Handle Signal Error:", err);
-            logDebug(`Signal Handle Failed: ${err.message}`);
         }
     };
 
-    // --- 3. PTT Logic ---
     const startTx = () => {
         if (localStreamRef.current) {
             localStreamRef.current.getAudioTracks().forEach(t => t.enabled = true);
@@ -469,14 +411,10 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
 
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT') {
-                startTx();
-            }
+            if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT') startTx();
         };
         const handleKeyUp = (e) => {
-            if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
-                stopTx();
-            }
+            if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') stopTx();
         };
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
@@ -486,12 +424,10 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         };
     }, []);
 
-    // --- 4. Signal Simulation ---
     useEffect(() => {
         const interval = setInterval(() => {
             const newStrengths = {};
             Object.keys(remoteStreams).forEach(id => {
-                // Simulate fluctuation
                 newStrengths[id] = Math.floor(Math.random() * 5) + 1;
             });
             setSignalStrengths(newStrengths);
@@ -499,9 +435,7 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         return () => clearInterval(interval);
     }, [remoteStreams]);
 
-    // --- 5.5 Shared Radio Logic ---
     useEffect(() => {
-        // Stop any previous static
         if (staticNodeRef.current) {
             staticNodeRef.current.stop();
             staticNodeRef.current.disconnect();
@@ -517,28 +451,21 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         }
 
         if (activeRadio.type === 'stream') {
-            // Let the audio element autoPlay handle it, or programmatic play if needed
             if (radioAudioRef.current) {
-                radioAudioRef.current.volume = 1.0; // Reset volume
-                radioAudioRef.current.play().catch(e => console.error("Radio Play Error (Autoplay blocked?):", e));
+                radioAudioRef.current.volume = 1.0;
+                radioAudioRef.current.play().catch(console.error);
             }
         } else if (activeRadio.type === 'static') {
-            // Generate White Noise
             if (!audioContextRef.current) return;
             const ctx = audioContextRef.current;
-            const bufferSize = ctx.sampleRate * 2; // 2 seconds buffer
+            const bufferSize = ctx.sampleRate * 2;
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
-
-            for (let i = 0; i < bufferSize; i++) {
-                data[i] = Math.random() * 2 - 1;
-            }
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
 
             const noise = ctx.createBufferSource();
             noise.buffer = buffer;
             noise.loop = true;
-
-            // Gain for volume control (Static is loud!)
             const gainNode = ctx.createGain();
             gainNode.gain.value = 0.1;
 
@@ -549,26 +476,13 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         }
     }, [activeRadio]);
 
-    // --- 5.6 Audio Ducking Logic ---
     useEffect(() => {
         const duckVolume = transmittingUsers.size > 0 || isTransmitting ? 0.2 : 1.0;
-
-        // Duck Stream
-        if (radioAudioRef.current) {
-            radioAudioRef.current.volume = duckVolume;
-        }
-
-        // Duck Static
-        // Note: For static, we controlled gain via a local variable in the previous effect.
-        // To properly duck static, we would need to store the GainNode in a ref.
-        // For now, we accept static stays loud or rely on the stream volume if we were using an Audio element for it.
-        // To fix this fully, we would refactor static generation, but for this step we focused on the stream.
+        if (radioAudioRef.current) radioAudioRef.current.volume = duckVolume;
     }, [transmittingUsers.size, isTransmitting]);
 
     const handleBroadcast = (radioData) => {
-        // Optimistic UI Update: Set active radio for self immediately
         setActiveRadio(radioData);
-        // Then broadcast to others
         socket.emit('radio-tune', radioData);
         setShowTuner(false);
     };
@@ -578,7 +492,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         else setActiveRadio(null);
     };
 
-    // --- 6. Chat ---
     const sendMessage = (e) => {
         e.preventDefault();
         if (chatInput.trim()) {
@@ -591,18 +504,13 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-
-    // --- Render ---
     return (
         <div className="console-container" style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', padding: '10px', gap: '10px' }}>
-
-            {/* Header Panel */}
             <div className="crm-panel" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                     <div>
                         <h2 className="crm-text-glow" style={{ fontFamily: 'var(--font-display)', color: 'var(--primary-color)', margin: 0, lineHeight: 1 }}>
                             {frequency}
-                            {/* Hide MHz if it's a direct phone number */}
                             {!frequency.toString().includes('+') && <span style={{ fontSize: '0.6em', color: 'var(--text-muted)' }}>MHz</span>}
                         </h2>
                         <div style={{ fontSize: '0.8rem', color: 'var(--accent-color)', fontFamily: 'var(--font-mono)', opacity: 0.8 }}>
@@ -614,7 +522,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                     </div>
                 </div>
 
-                {/* Shared Radio Player Bar */}
                 {activeRadio && (
                     <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', background: '#002211', padding: '5px 15px', border: '1px solid var(--primary-color)', borderRadius: '5px', display: 'flex', gap: '10px', alignItems: 'center', zIndex: 2000 }}>
                         <RadioIcon size={16} className="crm-blink" style={{ color: 'var(--primary-color)' }} />
@@ -642,12 +549,8 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 </button>
             </div>
 
-            {/* Main Body: Grid of Remote Feeds + Chat */}
             <div style={{ display: 'flex', flex: 1, gap: '10px', overflow: 'hidden' }}>
-
-                {/* Remote Feeds / Visuals */}
                 <div className="crm-panel" style={{ flex: 3, display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '10px', overflowY: 'auto', alignContent: 'flex-start' }}>
-                    {/* Self Video Preview (Small) */}
                     {isVideoEnabled && (
                         <div style={{ width: '200px', height: '150px', background: '#000', border: '1px solid var(--primary-color)', position: 'relative' }}>
                             <video ref={localVideoRef} autoPlay muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -655,7 +558,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         </div>
                     )}
 
-                    {/* Remote Users */}
                     {Object.entries(remoteStreams).map(([id, stream]) => (
                         <div key={id} style={{
                             width: '300px', height: '200px', background: '#000',
@@ -665,17 +567,12 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                             {isVideoEnabled ? (
                                 <RemoteVideo stream={stream} />
                             ) : (
-                                // Audio Visualization Placeholder
                                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                                     <Activity size={48} style={{ color: transmittingUsers.has(id) ? 'var(--success-color)' : '#333' }} />
                                     {transmittingUsers.has(id) && <span className="crm-text-glow" style={{ color: 'var(--success-color)', fontSize: '0.8rem', marginTop: '10px' }}>RECEIVING AUDIO...</span>}
                                 </div>
                             )}
-
-                            {/* Audio Element (Hidden but active) */}
                             <RemoteAudio stream={stream} />
-
-                            {/* Metadata Overlay */}
                             <div style={{ position: 'absolute', bottom: 0, width: '100%', background: 'rgba(0,0,0,0.8)', padding: '5px', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                                 <span>ID: {id.substr(0, 4)}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
@@ -699,7 +596,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                     )}
                 </div>
 
-                {/* Chat Panel */}
                 <div className="crm-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: '350px' }}>
                     <div style={{ padding: '10px', borderBottom: '1px solid var(--panel-border)', background: 'var(--panel-bg)', zIndex: 10 }}>
                         <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -743,7 +639,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 </div>
             </div>
 
-            {/* Control Footer */}
             <div className="crm-panel" style={{ padding: '20px', display: 'flex', justifyContent: 'center', gap: '20px', alignItems: 'center' }}>
                 <button
                     className={`crm-btn centered ${isVideoEnabled ? '' : 'danger'}`}
@@ -754,12 +649,11 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                     VIDEO {isVideoEnabled ? 'ON' : 'OFF'}
                 </button>
 
-                {/* PTT Main Button */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                     <button
                         onMouseDown={startTx}
                         onMouseUp={stopTx}
-                        onMouseLeave={stopTx} // Safety
+                        onMouseLeave={stopTx}
                         onTouchStart={startTx}
                         onTouchEnd={stopTx}
                         style={{
@@ -775,7 +669,6 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         {isTransmitting ? <Mic size={40} /> : <MicOff size={40} />}
                         <span style={{ fontWeight: 'bold', marginTop: '5px' }}>{isTransmitting ? 'ON AIR' : 'PTT'}</span>
                     </button>
-                    {/* Visualizer under PTT */}
                     <LocalAudioVisualizer volume={micVolume} isTransmitting={isTransmitting} />
                 </div>
 
@@ -807,13 +700,7 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                     onClose={() => setShowDialer(false)}
                     onCall={(newFreq) => {
                         setShowDialer(false);
-                        // We need a way to switch frequency. 
-                        // Currently RadioConsole is mounted *with* a frequency prop.
-                        // We need to notify the parent (App.jsx) to change the frequency.
-                        // For now we will assume a prop 'onSwitchFrequency' or just reload the page (bad)
-                        // Actually, I added 'onSwitchFrequency' to the prop definition in the update above!
-                        if (onSwitchFrequency) onSwitchFrequency(newFreq);
-                        else alert("Switching frequency requires parent callback. (Dev Note: Implement onSwitchFrequency in App.jsx)");
+                        onSwitchFrequency(newFreq);
                     }}
                 />
             )}
@@ -821,43 +708,34 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
     );
 };
 
-// --- Helper Components ---
 const RemoteVideo = ({ stream }) => {
-    const videoRef = useRef(null);
+    const ref = useRef();
     useEffect(() => {
-        if (videoRef.current && stream) videoRef.current.srcObject = stream;
+        if (ref.current && stream) ref.current.srcObject = stream;
     }, [stream]);
-    return <video ref={videoRef} autoPlay style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+    return <video ref={ref} autoPlay style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
 };
 
 const RemoteAudio = ({ stream }) => {
-    const audioRef = useRef(null);
+    const ref = useRef();
     useEffect(() => {
-        if (audioRef.current && stream) {
-            audioRef.current.srcObject = stream;
-            audioRef.current.play().catch(e => console.error("Auto-play blocked:", e));
+        if (ref.current && stream) {
+            ref.current.srcObject = stream;
+            ref.current.play().catch(e => console.error("Remote Audio Play Fail:", e));
         }
     }, [stream]);
-    return <audio ref={audioRef} autoPlay />;
+    return <audio ref={ref} autoPlay controls={false} />;
 };
 
 const LocalAudioVisualizer = ({ volume, isTransmitting }) => {
-    // Determine bar height based on volume (0-255)
-    // Scale 0-255 to 0-30px
-    const height = Math.min(30, (volume / 255) * 50);
-
+    const bars = 5;
     return (
-        <div style={{
-            width: '100%', height: '30px', marginTop: '10px',
-            background: '#111', borderRadius: '4px', overflow: 'hidden',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '2px'
-        }}>
-            {/* Simple visualizer simulation since we get a single average volume */}
-            {[...Array(10)].map((_, i) => (
+        <div style={{ display: 'flex', gap: '2px', height: '15px', alignItems: 'flex-end', marginTop: '10px' }}>
+            {[...Array(bars)].map((_, i) => (
                 <div key={i} style={{
-                    width: '6px',
-                    height: `${isTransmitting ? height * (Math.random() + 0.5) : 2}px`,
-                    background: isTransmitting ? 'var(--accent-color)' : '#333',
+                    width: '8px',
+                    height: `${Math.min(100, (volume / 255) * 100 * (i + 1) * 0.5)}%`,
+                    background: isTransmitting ? 'var(--success-color)' : '#444',
                     transition: 'height 0.1s'
                 }} />
             ))}
