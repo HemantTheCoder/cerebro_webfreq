@@ -35,12 +35,14 @@ const voiceService = {
         // The request contains 'To' (the number dialed).
         const { To, From } = req.body;
 
-        console.log(`Voice Webhook: Call from ${From} to ${To}`);
+        console.log(`Voice Webhook Body:`, JSON.stringify(req.body));
 
         const response = new VoiceResponse();
 
         if (!To) {
-            response.say('Invalid destination number.');
+            const receivedKeys = Object.keys(req.body).join(', ');
+            console.error("Missing 'To' parameter. Received:", receivedKeys);
+            response.say(`Invalid destination. Received parameters: ${receivedKeys || 'none'}`);
         } else if (To.includes('+')) {
             // Dial the real number (PSTN)
             // We must ensure the 'callerId' is our Twilio Number or verified User Number.
