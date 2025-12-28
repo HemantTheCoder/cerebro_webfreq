@@ -1,3 +1,5 @@
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useSocket } from '../context/SocketContext';
 import { Mic, MicOff, Video, VideoOff, MessageSquare, Signal, Users, LogOut, Send, Activity, Radio as RadioIcon, XCircle, Phone } from 'lucide-react';
 import ExternalTuner from './ExternalTuner';
 import PhoneDialer from './PhoneDialer';
