@@ -78,13 +78,15 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         twilioDeviceRef.current = device;
 
                         // MAIN DIALING LOGIC
-                        const attemptDial = () => {
+                        const attemptDial = async () => {
                             console.log("Attempting to Dial... Device State:", device.state);
                             if (device.isBusy) { console.warn("Device busy, skipping."); return; }
                             const cleanNumber = frequency.toString().replace(/[^0-9+]/g, '');
 
                             try {
-                                const call = device.connect({ TargetNumber: cleanNumber });
+                                console.log("Dialing...");
+                                const call = await device.connect({ TargetNumber: cleanNumber });
+
                                 call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
                                 call.on('disconnect', () => onDisconnect());
                                 call.on('error', (err) => {
@@ -105,7 +107,7 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                         device.on('error', (err) => {
                             console.error("Twilio Device Error:", err);
                             if (err.code === 31005) {
-                                setMessages(prev => [...prev, { system: true, text: "VOIP NETWORK ERROR: Firewall/Connection blocked." }]);
+                                setMessages(prev => [...prev, { system: true, text: "VOIP NETWORK ERROR: Switch Network." }]);
                             } else {
                                 setMessages(prev => [...prev, { system: true, text: `VoIP Error (${err.code}): ${err.message}` }]);
                             }
@@ -113,10 +115,9 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
 
                         device.on('registered', () => {
                             console.log("Twilio Registered Successfully");
-                            // Fallback: If 'ready' doesn't fire, force dial after 1s
                             setTimeout(() => {
                                 if (device.state === 'registered' || device.state === 'ready') {
-                                    console.log("Force Dialing via Fallback...");
+                                    console.log("Force Dialing fallback...");
                                     attemptDial();
                                 }
                             }, 1000);
