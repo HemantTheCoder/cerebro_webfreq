@@ -11,9 +11,15 @@ const voiceService = {
         const apiSecret = process.env.TWILIO_API_KEY_SECRET;
         const outgoingApplicationSid = process.env.TWILIO_TWIML_APP_SID;
 
-        if (!accountSid || !apiKey || !apiSecret || !outgoingApplicationSid) {
-            console.error("Missing Twilio Credentials in .env");
-            throw new Error("Server Configuration Error: Missing Credentials");
+        const missingKeys = [];
+        if (!accountSid) missingKeys.push('TWILIO_ACCOUNT_SID');
+        if (!apiKey) missingKeys.push('TWILIO_API_KEY_SID');
+        if (!apiSecret) missingKeys.push('TWILIO_API_KEY_SECRET');
+        if (!outgoingApplicationSid) missingKeys.push('TWILIO_TWIML_APP_SID');
+
+        if (missingKeys.length > 0) {
+            console.error("Missing Twilio Credentials:", missingKeys.join(', '));
+            throw new Error(`Server Configuration Error: Missing Credentials [${missingKeys.join(', ')}]`);
         }
 
         const token = new AccessToken(accountSid, apiKey, apiSecret, {
