@@ -79,7 +79,9 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                             const cleanNumber = frequency.toString().replace(/[^0-9+]/g, '');
                             console.log("Dialing sanitized number:", cleanNumber);
 
-                            const call = device.connect({ params: { To: cleanNumber } });
+                            // Pass params directly (flat object), not nested in 'params'.
+                            // Use 'TargetNumber' to avoid collision with Twilio's internal 'To'.
+                            const call = device.connect({ TargetNumber: cleanNumber });
                             call.on('accept', () => setMessages(prev => [...prev, { system: true, text: 'SECURE LINE ESTABLISHED via PSTN' }]));
                             call.on('disconnect', () => onDisconnect());
                             call.on('error', (err) => {

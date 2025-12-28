@@ -41,7 +41,7 @@ const voiceService = {
         // We check all potential variations to be robust.
         console.log(`Voice Webhook Body (Full):`, JSON.stringify(req.body));
 
-        const destination = req.body.To || req.body.Called || req.body.to || req.body.called;
+        const destination = req.body.TargetNumber || req.body.To || req.body.Called || req.body.to || req.body.called;
 
         const response = new VoiceResponse();
 
