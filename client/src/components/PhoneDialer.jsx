@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Phone, Delete, X } from 'lucide-react';
+import { Phone, Delete, X, Plus } from 'lucide-react';
 import { phoneNumberToFrequency } from '../utils/phoneUtils';
 
 const PhoneDialer = ({ onClose, onCall }) => {
@@ -7,37 +7,56 @@ const PhoneDialer = ({ onClose, onCall }) => {
     const [error, setError] = useState('');
 
     const handleDigit = (digit) => {
-        if (display.length < 15) {
-            setDisplay(prev => formatAsYouType(prev + digit));
+        if (display.length < 20) {
+            // Note: We don't want to double format if user is typing fast
+            // Just append and re-format
+            const clean = display.replace(/[^\d+]/g, ''); // Keep digits and +
+            let newVal = clean + digit;
+
+            setDisplay(formatAsYouType(newVal));
         }
     };
 
     const handleDelete = () => {
-        setDisplay(prev => prev.slice(0, -1));
+        // Remove last char from CLEAN version
+        const clean = display.replace(/[^\d+]/g, '');
+        const newVal = clean.slice(0, -1);
+        setDisplay(formatAsYouType(newVal));
         setError('');
     };
 
-    // Auto-formatting for the specific +1 (800) style
-    // But allow free typing too? No, keypad is stricter.
-    // Let's just append digits and let the user type the "extension".
-    // Actually, to match the system, we should probably force the format.
-    // "Enter Frequency Code" might be easier, but User wants "Phone Numbers".
-    // Let's assume the user enters the FULL 10-digit number (skipping +1).
-    // 800-101-5000
-
     const formatAsYouType = (raw) => {
-        const digits = raw.replace(/\D/g, '');
-        // Format: (XXX) XXX-XXXX
+        // If it starts with +, treat as Intl
+        const isIntl = raw.startsWith('+');
+        const digits = raw.replace(/[^\d]/g, '');
+
+        if (isIntl) {
+            // Simple space formatting for Intl: +XX XXX XXX XXXX
+            // Very basic heuristic
+            let fmt = '+' + digits;
+            // You could use libphonenumber-js here if you wanted perfection
+            // For now, just space every 3-4 chars?
+            return fmt;
+        }
+
+        // Standard US (Fake) format
         if (digits.length <= 3) return digits;
         if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
         return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
     };
 
     const handleCall = () => {
-        // Validate
-        // We expect (800) XXX-X000 mostly
-        // Or we try to parse standard
-        const freq = phoneNumberToFrequency("1" + display.replace(/\D/g, ''));
+        // Send raw input with specific handling
+        // If user typed +, we definitely want to keep it.
+        // phoneNumberToFrequency now handles pass-through
+        let raw = display.replace(/[^\d+]/g, '');
+
+        // If user didn't type +, but it looks like a long number (India etc), maybe prepend +?
+        // User asked "number with country code, as I am in India".
+        // They might type "919876..." or "+91..."
+        // Safe bet: if it doesn't match the 800-FAKE pattern, treat as direct.
+
+        const freq = phoneNumberToFrequency(raw);
         if (freq) {
             onCall(freq);
         } else {
@@ -60,16 +79,17 @@ const PhoneDialer = ({ onClose, onCall }) => {
             {/* Display Screen */}
             <div style={{
                 background: '#000', border: '1px solid #333', padding: '15px',
-                textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '1.5rem',
+                textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '1.2rem',
                 color: error ? 'var(--danger-color)' : 'var(--text-main)',
-                height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end'
+                height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                overflow: 'hidden', whiteSpace: 'nowrap'
             }}>
-                {error || display || <span style={{ opacity: 0.3 }}>...</span>}
+                {error || display || <span style={{ opacity: 0.3 }}>ENTER NUMBER...</span>}
             </div>
 
             {/* Keypad */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, '*', 0, '#'].map((k) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => (
                     <button
                         key={k}
                         onClick={() => handleDigit(k)}
@@ -82,23 +102,43 @@ const PhoneDialer = ({ onClose, onCall }) => {
                         {k}
                     </button>
                 ))}
-            </div>
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                {/* Special Keys Row */}
                 <button
+                    onClick={() => handleDigit('+')}
+                    className="crm-btn"
+                    style={{ fontSize: '1.2rem', padding: '15px', background: '#111', borderColor: '#333' }}
+                >
+                    +
+                </button>
+
+                <button
+                    onClick={() => handleDigit('0')}
+                    className="crm-btn"
+                    style={{ fontSize: '1.2rem', padding: '15px', background: '#111', borderColor: '#333' }}
+                >
+                    0
+                </button>
+
+                <button
+                    // Backspace
                     onClick={handleDelete}
                     className="crm-btn danger"
-                    style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                    style={{ fontSize: '1.2rem', padding: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
                 >
                     <Delete size={20} />
                 </button>
+
+            </div>
+
+            {/* Call Action */}
+            <div style={{ marginTop: '10px' }}>
                 <button
                     onClick={handleCall}
                     className="crm-btn"
-                    style={{ flex: 2, background: 'var(--success-color)', color: '#000', borderColor: 'var(--success-color)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}
+                    style={{ width: '100%', padding: '15px', background: 'var(--success-color)', color: '#000', borderColor: 'var(--success-color)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}
                 >
-                    <Phone size={20} /> CALL
+                    <Phone size={24} /> CONNECT
                 </button>
             </div>
 

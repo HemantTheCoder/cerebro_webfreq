@@ -515,7 +515,9 @@ const RadioConsole = ({ frequency, onDisconnect, onSwitchFrequency }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                     <div>
                         <h2 className="crm-text-glow" style={{ fontFamily: 'var(--font-display)', color: 'var(--primary-color)', margin: 0, lineHeight: 1 }}>
-                            {frequency} <span style={{ fontSize: '0.6em', color: 'var(--text-muted)' }}>MHz</span>
+                            {frequency}
+                            {/* Hide MHz if it's a direct phone number */}
+                            {!frequency.toString().includes('+') && <span style={{ fontSize: '0.6em', color: 'var(--text-muted)' }}>MHz</span>}
                         </h2>
                         <div style={{ fontSize: '0.8rem', color: 'var(--accent-color)', fontFamily: 'var(--font-mono)', opacity: 0.8 }}>
                             {frequencyToPhoneNumber(frequency)}
