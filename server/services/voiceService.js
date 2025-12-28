@@ -51,9 +51,7 @@ const voiceService = {
             // We will try to dial without callerId (uses default app setting if configured) or fallback.
 
             const dial = response.dial({
-                callerId: '+15005550006', // TEST NUMBER or specific number?
-                // Actually, we should use the number tied to the account or let Twilio pick if possible.
-                // Best practice: Set callerId to your Twilio Number.
+                callerId: process.env.TWILIO_CALLER_ID || process.env.TWILIO_PHONE_NUMBER
             });
             dial.number(To);
         } else {
